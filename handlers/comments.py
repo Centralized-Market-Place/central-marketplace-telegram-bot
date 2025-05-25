@@ -11,5 +11,7 @@ async def cmd_comment(message: types.Message):
         return await message.reply("Usage: /comment <product_id> <text>")
     pid, text = parts
     api = ApiClient(message.from_user.id)
-    comment = await api.post_comment(pid, text)
-    await message.reply(f"Comment posted: {comment.get('id')}")
+    async with api:
+        # Post the comment
+        comment = await api.post_comment(pid, text)
+        await message.reply(f"Comment posted: {comment.get('id')}")

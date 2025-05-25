@@ -1,12 +1,97 @@
 from aiogram import Router, types
+from aiogram.filters.command import Command, CommandObject
+from client import ApiClient
+from handlers.channels import cmd_channels
+
+from aiogram import Router, types
 from aiogram.filters.command import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from client import ApiClient
+import logging
+import re
+logger = logging.getLogger(__name__)
+from aiogram.types import ReplyKeyboardRemove
+from state_store import save_state, load_state, clear_state
 
 router = Router()
 
+
+
+
+def nav_kb(kind: str) -> ReplyKeyboardMarkup:
+    cats = ["technology", "mobile", "fashion"]
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
+    for cat in cats:
+        kb.add(KeyboardButton(cat.title()))
+    kb.row(KeyboardButton("⬅️ Prev"), KeyboardButton("Next ➡️"))
+    kb.add(KeyboardButton(f"🔎 Search {kind.title()}"))
+    kb.add(KeyboardButton("◀️ Back to Main Menu"))
+    return kb
+
+@router.message(lambda m: m.text in ["🛍 Products", "📺 Channels"])
+async def cmd_show_categories(message: types.Message):
+    key = "products" if message.text.startswith("🛍") else "channels"
+    save_state(message.from_user.id, {
+        "what": key,
+        "category": None,
+        "page": 1,
+        "query": None,
+        "searching": False
+    })
+    cats = ["technology", "mobile", "fashion"]
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=
+            [[types.KeyboardButton(text=cat.title())] for cat in cats]
+          + [[types.KeyboardButton(text="⬅️ Prev"), types.KeyboardButton(text="Next ➡️")]]
+          + [[types.KeyboardButton(text=f"🔎 Search {key.title()}")]]
+          + [[types.KeyboardButton(text="◀️ Back to Main Menu")]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await message.answer(f"Select a {key[:-1]} category:", reply_markup=kb)
+
+@router.message(lambda m: m.text == "📺 Channels")
+async def launch_channels_via_button(message: types.Message):
+    cmd = CommandObject(command="channels", args="")
+    await cmd_channels(message, cmd)
+
+@router.message(lambda m: m.text in ["⬅️ Prev", "Next ➡️"])
+async def cmd_paginate(message: types.Message):
+    state = load_state(message.from_user.id)
+    if not state:
+        return await message.answer("Choose Products or Channels first with 🛍 / 📺.")
+    if message.text == "⬅️ Prev":
+        state["page"] = max(1, state["page"] - 1)
+    else:
+        state["page"] += 1
+    save_state(message.from_user.id, state)
+    return await _list_products_or_channels(message, state["what"], state["page"], state["category"])
+
+async def _list_products_or_channels(message: types.Message, kind: str, page: int, category: str = None):
+    api = ApiClient(message.from_user.id)
+    async with api:
+        data = await (api.list_products if kind=="products" else api.list_channels)(page=page, category=category)
+    items = data.get("items", [])
+    if not items:
+        return await message.answer(f"No {kind} found on page {page}.")
+
+    await _send_page(message, kind, category, page)
+
+    cats = ["technology", "mobile", "fashion"]
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=
+            [[types.KeyboardButton(text=cat.title())] for cat in cats]
+          + [[types.KeyboardButton(text="⬅️ Prev"), types.KeyboardButton(text="Next ➡️")]]
+          + [[types.KeyboardButton(text=f"🔎 Search {kind.title()}")]]
+          + [[types.KeyboardButton(text="◀️ Back to Main Menu")]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await message.answer(f"{kind.title()} – page {page}/{data.get('total_pages', '?')}", reply_markup=kb)
+
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
+    clear_state(message.from_user.id)
     main_menu = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛍 Products"), KeyboardButton(text="📺 Channels")],
@@ -20,60 +105,76 @@ async def cmd_start(message: types.Message):
         reply_markup=main_menu
     )
 
-@router.message(lambda m: m.text in ["🛍 Products", "📺 Channels"])
-async def cmd_show_categories(message: types.Message):
-    key = "products" if message.text.startswith("🛍") else "channels"
-    title = "product" if key == "products" else "channel"
-    cats = ["technology", "mobile", "fashion"]
-
-    # **Here we include the `keyboard=` field**
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=cat.title())] for cat in cats
-        ] + [
-            [KeyboardButton(text=f"🔎 Search {title.title()}")],
-            [KeyboardButton(text="◀️ Back to Main Menu")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-    await message.answer(f"Select a {title} category:", reply_markup=kb)
+@router.message(lambda m: m.text == "◀️ Back to Main Menu")
+async def cmd_back_to_main(message: types.Message):
+    await cmd_start(message)
 
 @router.message(lambda m: m.text and m.text.lower() in ["technology","mobile","fashion"])
 async def cmd_category_selected(message: types.Message):
     category = message.text.lower()
-    await _send_page(message, what="products", category=category, page=1)
+    state = load_state(message.from_user.id)
+    state["category"] = category
+    state["page"]     = 1
+    save_state(message.from_user.id, state)
+
+    await _list_products_or_channels(
+      message,
+      kind=state["what"], 
+      page=1,
+      category=category
+    )
 
 @router.message(lambda m: m.text and m.text.startswith("🔎"))
-async def cmd_search_prompt(message: types.Message):
-    # e.g. “🔎 Search Product”
-    what = "products" if "Product" in message.text else "channels"
-    # send a plain keyboard remove so they can type
-    await message.answer("Type your search query:", reply_markup=ReplyKeyboardRemove())
-    # And set up FSM/state to capture next message as search term...
+async def cmd_search_trigger(message: types.Message):
+    state = load_state(message.from_user.id)
+    if not state:
+        await message.answer("Please select 🛍 or 📺 first.")
+        return
+    state["searching"] = True
+    save_state(message.from_user.id, state)
+    await message.answer("Please type your search keyword:")
+
+@router.message(lambda m: load_state(m.from_user.id,).get("searching", False))
+async def cmd_search_input(message: types.Message):
+    state = load_state(message.from_user.id)
+    state["query"] = message.text.strip()
+    state["page"] = 1
+    state["searching"] = False
+    save_state(message.from_user.id, state)
+    await _send_page(message, what=state["what"], category=state.get("category"), page=state["page"])
+
 async def _send_page(message: types.Message, what: str, category: str, page: int):
-    api   = ApiClient(message.from_user.id)
-    data  = await (api.list_products if what=="products" else api.list_channels)(
-                page=page, category=category
-            )
-    items = data.get("items", [])
+    state = load_state(message.from_user.id)
+    api = ApiClient(message.from_user.id)
+    logger.debug
+    async with api:
+        data = await (api.list_products if what == "products" else api.list_channels)(
+            page=page,
+            category=category,
+            query=state.get("query")
+        )
+        items = data.get("items", [])
+        if not items:
+            text = f"No {what} found"
+            if state.get("query"):
+                text += f" for '{state['query']}'"
+            text += f" on page {state['page']}."
+            await message.answer(text)
+            return
+        for item in items:
+            if what == "products":
+                url = item.get("images", [None])[0] or "https://via.placeholder.com/300x200"
+                raw = f"*{item.get('name','<no name>')}*\nPrice: ${item.get('price') or 'N/A'}\n{(item.get('description') or '').strip()}"
+                caption = escape_md_v2(raw)
+                await message.answer_photo(photo=url, caption=caption, parse_mode="MarkdownV2")
+            else:
+                url = item.get("thumbnail_url") or "https://via.placeholder.com/300x200"
+                raw = f"*{item.get('title','<no title>')}*\n{(item.get('description') or '')[:100]}...\n[🔗 Join Channel]({item.get('username') and f'https://t.me/{item['username']}' or 'N/A'})"
+                # caption = escape_md_v2(raw)
+                await message.answer_photo(photo=url, caption=raw, parse_mode="Markdown")
+        save_state(message.from_user.id, state)
 
-    # Render each item (swap to answer_photo + caption if you like)
-    for p in items:
-        title = p.get("name") or p.get("title") or "<no name>"
-        await message.answer(f"{title} (ID: {p['id']})")
+        await message.answer(f"{what.title()} – page {state['page']}/{data.get('total_pages','?')}", reply_markup=nav_kb(what))
 
-    # Build pagination + back keyboard
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    row = []
-    if page > 1:
-        row.append( KeyboardButton(text="⬅ Prev") )
-    row.append( KeyboardButton(text=str(page)) )
-    if len(items) >= data.get("page_size",10):
-        row.append( KeyboardButton(text="Next ➡") )
-    kb.row(*row)
-    kb.add( KeyboardButton(text="◀️ Back to Categories") )
-    await message.answer(
-        f"{what.title()} in {category.title()} — page {page}",
-        reply_markup=kb
-    )
+def escape_md_v2(text: str) -> str:
+    return re.sub(r'([_\*\[\]\(\)~`>#+\-=\|{}.!])', r"\\\1", text)
