@@ -1,3 +1,4 @@
-aiogram
-httpx
-python-dotenv
+aiogram==3.20.0.post0
+httpx==0.28.1
+python-dotenv==1.1.0
+watchgod==0.8.2
