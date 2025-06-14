@@ -82,7 +82,7 @@ class ApiClient:
             params["category"] = category
         if query:
             params["query"] = query
-        return await self._request("GET", "/channels/", params=params)
+        return await self._request("GET", "/channels", params=params)
 
 
     async def list_products(
