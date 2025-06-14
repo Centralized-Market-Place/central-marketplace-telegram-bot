@@ -22,7 +22,9 @@ def init_db():
                 category    TEXT,
                 page        INTEGER,
                 query       TEXT,
-                searching   INTEGER    -- 0 or 1
+                searching   INTEGER,   -- 0 or 1
+                min_price   INTEGER,
+                max_price   INTEGER
             )
         """)
         conn.commit()
@@ -31,26 +33,31 @@ def init_db():
 def save_state(user_id: int, state: Dict[str, Any]) -> None:
     """
     Insert or update the state for a given user.
-    `state` keys: what, category, page, query, searching.
+    `state` keys: what, category, page, query, searching, min_price, max_price.
     """
     with _LOCK:
+        
         conn = _get_connection()
         conn.execute("""
-            INSERT INTO user_state(user_id, what, category, page, query, searching)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO user_state(user_id, what, category, page, query, searching, min_price, max_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 what      = excluded.what,
                 category  = excluded.category,
                 page      = excluded.page,
                 query     = excluded.query,
-                searching = excluded.searching
+                searching = excluded.searching,
+                min_price = excluded.min_price,
+                max_price = excluded.max_price
         """, (
             user_id,
             state.get("what"),
             state.get("category"),
             state.get("page"),
             state.get("query"),
-            1 if state.get("searching") else 0
+            1 if state.get("searching") else 0,
+            state.get("min_price"),
+            state.get("max_price")
         ))
         conn.commit()
         conn.close()
@@ -70,6 +77,8 @@ def load_state(user_id: int) -> Optional[Dict[str, Any]]:
         "page":       row["page"],
         "query":      row["query"],
         "searching":  bool(row["searching"]),
+        "min_price":  row["min_price"],
+        "max_price":  row["max_price"]
     }
 
 def clear_state(user_id: int) -> None:

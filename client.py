@@ -91,6 +91,7 @@ class ApiClient:
         page_size: int = 10,
         category: Optional[str] = None,
         query: Optional[str] = None,
+        price_range: Optional[Dict[str, Union[int, None]]] = None
     ) -> Dict[str, Any]:
         params: Dict[str, Union[int, str]] = {
             "page": page,
@@ -100,6 +101,12 @@ class ApiClient:
             params["category"] = category
         if query:
             params["query"] = query
+        if price_range:
+            if price_range.get("min_price") or price_range.get("max_price"):
+                if price_range.get("min_price") is not None:
+                    params["min_price"] = price_range["min_price"]
+                if price_range.get("max_price") is not None:
+                    params["max_price"] = price_range["max_price"]
         return await self._request("GET", "/products/", params=params)
 
     async def get_product(self, product_id: str) -> Dict[str, Any]:
