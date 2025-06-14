@@ -2,7 +2,7 @@ from aiogram import Router, types
 from aiogram.filters.command import Command, CommandObject
 from client import ApiClient
 from handlers.channels import cmd_channels
-
+from constants import PRICE_RANGES
 from aiogram import Router, types
 from aiogram.filters.command import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -36,7 +36,9 @@ async def cmd_show_categories(message: types.Message):
         "category": None,
         "page": 1,
         "query": None,
-        "searching": False
+        "searching": False,
+        "min_price": None,
+        "max_price": None
     })
     cats = ["technology", "mobile", "fashion"]
     kb = types.ReplyKeyboardMarkup(
@@ -44,11 +46,24 @@ async def cmd_show_categories(message: types.Message):
             [[types.KeyboardButton(text=cat.title())] for cat in cats]
           + [[types.KeyboardButton(text="⬅️ Prev"), types.KeyboardButton(text="Next ➡️")]]
           + [[types.KeyboardButton(text=f"🔎 Search {key.title()}")]]
+          + [[types.KeyboardButton(text=f"💰 Filter by Price")]]
           + [[types.KeyboardButton(text="◀️ Back to Main Menu")]],
         resize_keyboard=True,
         one_time_keyboard=True
     )
     await message.answer(f"Select a {key[:-1]} category:", reply_markup=kb)
+
+@router.message(lambda m: m.text == "💰 Filter by Price")
+async def cmd_show_price_ranges(message: types.Message):
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text=price["label"])] for price in PRICE_RANGES
+        ] + [[types.KeyboardButton(text="⬅️ Prev"), types.KeyboardButton(text="Next ➡️")]]
+        + [[types.KeyboardButton(text="◀️ Back to Main Menu")]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await message.answer("Filter by price range:", reply_markup=kb)
 
 @router.message(lambda m: m.text == "📺 Channels")
 async def launch_channels_via_button(message: types.Message):
@@ -67,10 +82,15 @@ async def cmd_paginate(message: types.Message):
     save_state(message.from_user.id, state)
     return await _list_products_or_channels(message, state["what"], state["page"], state["category"])
 
-async def _list_products_or_channels(message: types.Message, kind: str, page: int, category: str = None):
+async def _list_products_or_channels(message: types.Message, kind: str, page: int, category: str = None, price_range:  dict = None):
     api = ApiClient(message.from_user.id)
     async with api:
-        data = await (api.list_products if kind=="products" else api.list_channels)(page=page, category=category)
+        data = None
+        if kind == "products":
+            data = await api.list_products(page=page, category=category, price_range=price_range)
+        else:
+            data = await api.list_channels(page=page, category=category)
+
     items = data.get("items", [])
     if not items:
         return await message.answer(f"No {kind} found on page {page}.")
@@ -143,16 +163,51 @@ async def cmd_search_input(message: types.Message):
     save_state(message.from_user.id, state)
     await _send_page(message, what=state["what"], category=state.get("category"), page=state["page"])
 
-async def _send_page(message: types.Message, what: str, category: str, page: int):
+@router.message(lambda m: m.text and any(p["label"] == m.text for p in PRICE_RANGES))
+async def cmd_price_filter_selected(message: types.Message):
+    selected = next(p for p in PRICE_RANGES if p["label"] == message.text)
+    state = load_state(message.from_user.id)
+    state["min_price"] = selected["min"]
+    state["max_price"] = selected["max"]
+    state["page"] = 1
+    save_state(message.from_user.id, state)
+    # await _list_products_or_channels(
+    #     message,
+    #     kind=state["what"],
+    #     page=1,
+    #     category=state["category"],
+    #     price_range={"min_price": selected["min"], "max_price": selected["max"]}
+    # )
+    await _send_page(
+        message,
+        what=state["what"],
+        category=state["category"],
+        page=1,
+        price_range={"min_price": selected["min"], "max_price": selected["max"]}
+    )
+
+async def _send_page(message: types.Message, what: str, category: str, page: int, price_range: dict = None):
     state = load_state(message.from_user.id)
     api = ApiClient(message.from_user.id)
     logger.debug
     async with api:
-        data = await (api.list_products if what == "products" else api.list_channels)(
-            page=page,
-            category=category,
-            query=state.get("query")
-        )
+        data = None
+        if what == "products":
+            if price_range is None:
+                price_range = {"min_price": state.get("min_price"), "max_price": state.get("max_price")}
+                # print("dddddddddddddddddddddddddddddddddddddddddddddddddddd", price_range)
+            data = await api.list_products(
+                page=page,
+                category=category,
+                query=state.get("query"),
+                price_range=price_range
+            )
+        else:
+            data = await api.list_channels(
+                page=page,
+                category=category,
+                query=state.get("query")
+            )
         items = data.get("items", [])
         if not items:
             text = f"No {what} found"
