@@ -218,8 +218,13 @@ async def _send_page(message: types.Message, what: str, category: str, page: int
             return
         for item in items:
             if what == "products":
+                channel_name = item.get("channel", {}).get("username", "")
+                link = f"https://t.me/{channel_name}/{item.get('message_id')}" if channel_name else ""
                 url = item.get("images", [None])[0] or "https://via.placeholder.com/300x200"
                 raw = f"*{item.get('name','<no name>')}*\nPrice: ${item.get('price') or 'N/A'}\n{(item.get('description') or '').strip()}"
+                
+                if link:
+                    raw += f"\n\n* [🔗 View Product]({link})*"
                 caption = escape_md_v2(raw)
                 await message.answer_photo(photo=url, caption=caption, parse_mode="MarkdownV2")
             else:
