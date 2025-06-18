@@ -121,7 +121,7 @@ async def cmd_start(message: types.Message):
     main_menu = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛍 Products"), KeyboardButton(text="📺 Channels")],
-            [KeyboardButton(text="⭐ My Bookmarks"), KeyboardButton(text="💬 Help")],
+            [ KeyboardButton(text="💬 Help")],
         ],
         resize_keyboard=True,
         one_time_keyboard=False
@@ -129,6 +129,13 @@ async def cmd_start(message: types.Message):
     await message.answer(
         "Welcome! Choose an action:",
         reply_markup=main_menu
+    )
+
+@router.message(lambda msg: msg.text == "💬 Help")
+async def handle_help(message: types.Message):
+    await message.answer(
+        "For more information, please check our website: [Centralized Marketplace](https://www.centeralmarketplace.systems)",
+        parse_mode="Markdown"
     )
 
 @router.message(lambda m: m.text == "◀️ Back to Main Menu")
@@ -230,11 +237,16 @@ async def _send_page(message: types.Message, what: str, category: str, page: int
                 if what == "products":
                     channel_name = item.get("channel", {}).get("username", "")
                     link = f"https://t.me/{channel_name}/{item.get('message_id')}" if channel_name else ""
-                    url = item.get("images", [None])[0] or "https://via.placeholder.com/300x200"
-                    raw = f"*{item.get('title','<no name>')}*\n\nPrice: ${item.get('price') or 'Not Described'}\n{(item.get('description') or '').strip()}"
+                    images = item.get("images", [])
+                    url = images[0] if images else "https://res.cloudinary.com/dpfl0ikdj/image/upload/v1750256371/cart_cnftt3.jpg"
+                    description = (item.get("description") or "").strip()
+                    if len(description) > 800:
+                        description = description[:800] + "..."
+
+                    raw = f"*{item.get('title','<no name>')}*\n\nPrice: ${item.get('price') or 'Not Described'}\n{description}"
                     if link:
-                        raw += f"\n\n [🔗 View Product]({link})"
-                    caption = escape_md_v2(raw)
+                        raw += f"\n\n[🔗 View Product]({link})"
+
                     await message.answer_photo(photo=url, caption=raw, parse_mode="Markdown")
                 else:
                     url = item.get("thumbnail_url") or "https://via.placeholder.com/300x200"
@@ -247,6 +259,7 @@ async def _send_page(message: types.Message, what: str, category: str, page: int
 
     except Exception as exc:
         logger.error("❌ Error while sending page: %s", item_vals)
+        logger.exception("Error while sending page: %s", repr(exc))
         if not item_vals:
             await message.answer("An error occurred while getting data. Please try again later.")
 
