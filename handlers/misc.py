@@ -250,7 +250,9 @@ async def _send_page(message: types.Message, what: str, category: str, page: int
                     await message.answer_photo(photo=url, caption=raw, parse_mode="Markdown")
                 else:
                     url = item.get("thumbnail_url") or "https://via.placeholder.com/300x200"
-                    raw = f"*{item.get('title','<no title>')}*\n{(item.get('description') or '')[:100]}...\n[🔗 Join Channel]({item.get('username') and f'https://t.me/{item['username']}' or 'N/A'})"
+                    username = item.get("username")
+                    link = f"https://t.me/{username}" if username else "N/A"
+                    raw = f"*{item.get('title', '<no title>')}*\n{(item.get('description') or '')[:100]}...\n[🔗 Join Channel]({link})"
                     # caption = escape_md_v2(raw)
                     await message.answer_photo(photo=url, caption=raw, parse_mode="Markdown")
             save_state(message.from_user.id, state)
