@@ -2,7 +2,7 @@
 
 import logging
 from typing import Any, Dict, List, Optional, Union
-
+import asyncio
 import httpx
 
 from config import settings
@@ -18,7 +18,7 @@ class ApiClient:
             "X-Telegram-User-Id": str(telegram_user_id),
             "Accept": "application/json",
         }
-        timeout = httpx.Timeout(10.0, connect=5.0)
+        timeout = httpx.Timeout(10.0, connect=10.0)
         self._client = httpx.AsyncClient(
             base_url=settings.API_URL,
             headers=self._headers,
@@ -82,7 +82,15 @@ class ApiClient:
             params["category"] = category
         if query:
             params["query"] = query
-        return await self._request("GET", "/channels", params=params)
+        
+        for attempt in range(3):
+            try:
+                response = await self._client.get("/channels", params=params, timeout=httpx.Timeout(3, connect=3))
+                response.raise_for_status()
+                return response.json()
+            except httpx.RequestError as e:
+                logger.warning(f"Attempt {attempt+1}/3 failed: {e}")
+                await asyncio.sleep(2 ** attempt)
 
 
     async def list_products(
@@ -106,8 +114,17 @@ class ApiClient:
                 if price_range.get("min_price") is not None:
                     params["min_price"] = price_range["min_price"]
                 if price_range.get("max_price") is not None:
-                    params["max_price"] = price_range["max_price"]
-        return await self._request("GET", "/products/", params=params)
+                        params["max_price"] = price_range["max_price"]
+        for attempt in range(3):
+            try:
+                response = await self._client.get("/products/", params=params, timeout=httpx.Timeout(3, connect=3))
+                response.raise_for_status()
+                return response.json()
+            except httpx.RequestError as e:
+                logger.warning(f"Attempt {attempt+1}/3 failed: {e}")
+                await asyncio.sleep(2 ** attempt)
+        raise RuntimeError("Backend is not responding after 3 retries.")
+
 
     async def get_product(self, product_id: str) -> Dict[str, Any]:
         return await self._request("GET", f"/products/{product_id}")

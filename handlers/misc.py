@@ -20,12 +20,17 @@ router = Router()
 
 def nav_kb(kind: str) -> ReplyKeyboardMarkup:
     cats = ["technology", "mobile", "fashion"]
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
-    for cat in cats:
-        kb.add(KeyboardButton(cat.title()))
-    kb.row(KeyboardButton("⬅️ Prev"), KeyboardButton("Next ➡️"))
-    kb.add(KeyboardButton(f"🔎 Search {kind.title()}"))
-    kb.add(KeyboardButton("◀️ Back to Main Menu"))
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=cat.title())] for cat in cats
+        ] + [
+            [KeyboardButton(text="⬅️ Prev"), KeyboardButton(text="Next ➡️")],
+            [KeyboardButton(text=f"🔎 Search {kind.title()}")],
+            [KeyboardButton(text="◀️ Back to Main Menu")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
     return kb
 
 @router.message(lambda m: m.text in ["🛍 Products", "📺 Channels"])
@@ -86,11 +91,14 @@ async def _list_products_or_channels(message: types.Message, kind: str, page: in
     api = ApiClient(message.from_user.id)
     async with api:
         data = None
-        if kind == "products":
-            data = await api.list_products(page=page, category=category, price_range=price_range)
-        else:
-            data = await api.list_channels(page=page, category=category)
-
+        try:
+            if kind == "products":
+                data = await api.list_products(page=page, category=category, price_range=price_range)
+            else:
+                data = await api.list_channels(page=page, category=category)
+        except Exception as exc:
+            logger.error("❌ Error while fetching %s: %s", kind, repr(exc))
+            return await message.answer(f"An error occurred while fetching {kind}. Please try again later.")
     items = data.get("items", [])
     if not items:
         return await message.answer(f"No {kind} found on page {page}.")
@@ -107,8 +115,6 @@ async def _list_products_or_channels(message: types.Message, kind: str, page: in
         resize_keyboard=True,
         one_time_keyboard=True
     )
-    await message.answer(f"{kind.title()} – page {page}/{data.get('total_pages', '?')}", reply_markup=kb)
-
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
     clear_state(message.from_user.id)
@@ -162,7 +168,7 @@ async def cmd_search_input(message: types.Message):
     state["searching"] = False
     save_state(message.from_user.id, state)
     await _send_page(message, what=state["what"], category=state.get("category"), page=state["page"])
-
+    
 @router.message(lambda m: m.text and any(p["label"] == m.text for p in PRICE_RANGES))
 async def cmd_price_filter_selected(message: types.Message):
     selected = next(p for p in PRICE_RANGES if p["label"] == message.text)
@@ -190,51 +196,59 @@ async def _send_page(message: types.Message, what: str, category: str, page: int
     state = load_state(message.from_user.id)
     api = ApiClient(message.from_user.id)
     logger.debug
-    async with api:
-        data = None
-        if what == "products":
-            if price_range is None:
-                price_range = {"min_price": state.get("min_price"), "max_price": state.get("max_price")}
-                # print("dddddddddddddddddddddddddddddddddddddddddddddddddddd", price_range)
-            data = await api.list_products(
-                page=page,
-                category=category,
-                query=state.get("query"),
-                price_range=price_range
-            )
-        else:
-            data = await api.list_channels(
-                page=page,
-                category=category,
-                query=state.get("query")
-            )
-        items = data.get("items", [])
-        if not items:
-            text = f"No {what} found"
-            if state.get("query"):
-                text += f" for '{state['query']}'"
-            text += f" on page {state['page']}."
-            await message.answer(text)
-            return
-        for item in items:
+    got_one = False
+    item_vals = 0
+    try:
+        async with api:
+            data = None
             if what == "products":
-                channel_name = item.get("channel", {}).get("username", "")
-                link = f"https://t.me/{channel_name}/{item.get('message_id')}" if channel_name else ""
-                url = item.get("images", [None])[0] or "https://via.placeholder.com/300x200"
-                raw = f"*{item.get('name','<no name>')}*\nPrice: ${item.get('price') or 'N/A'}\n{(item.get('description') or '').strip()}"
-                
-                if link:
-                    raw += f"\n\n* [🔗 View Product]({link})*"
-                caption = escape_md_v2(raw)
-                await message.answer_photo(photo=url, caption=caption, parse_mode="MarkdownV2")
+                if price_range is None:
+                    price_range = {"min_price": state.get("min_price"), "max_price": state.get("max_price")}
+                data = await api.list_products(
+                    page=page,
+                    category=category,
+                    query=state.get("query"),
+                    price_range=price_range
+                )
             else:
-                url = item.get("thumbnail_url") or "https://via.placeholder.com/300x200"
-                raw = f"*{item.get('title','<no title>')}*\n{(item.get('description') or '')[:100]}...\n[🔗 Join Channel]({item.get('username') and f'https://t.me/{item['username']}' or 'N/A'})"
-                # caption = escape_md_v2(raw)
-                await message.answer_photo(photo=url, caption=raw, parse_mode="Markdown")
-        save_state(message.from_user.id, state)
+                data = await api.list_channels(
+                    page=page,
+                    category=category,
+                    query=state.get("query")
+                )
+            items = data.get("items", [])
+            if not items:
+                text = f"No {what} found"
+                if state.get("query"):
+                    text += f" for '{state['query']}'"
+                text += f" on page {state['page']}."
+                await message.answer(text)
+                return
+            got_one = True
+            item_vals = len(items)
+            for item in items:
+                if what == "products":
+                    channel_name = item.get("channel", {}).get("username", "")
+                    link = f"https://t.me/{channel_name}/{item.get('message_id')}" if channel_name else ""
+                    url = item.get("images", [None])[0] or "https://via.placeholder.com/300x200"
+                    raw = f"*{item.get('title','<no name>')}*\n\nPrice: ${item.get('price') or 'Not Described'}\n{(item.get('description') or '').strip()}"
+                    if link:
+                        raw += f"\n\n [🔗 View Product]({link})"
+                    caption = escape_md_v2(raw)
+                    await message.answer_photo(photo=url, caption=raw, parse_mode="Markdown")
+                else:
+                    url = item.get("thumbnail_url") or "https://via.placeholder.com/300x200"
+                    raw = f"*{item.get('title','<no title>')}*\n{(item.get('description') or '')[:100]}...\n[🔗 Join Channel]({item.get('username') and f'https://t.me/{item['username']}' or 'N/A'})"
+                    # caption = escape_md_v2(raw)
+                    await message.answer_photo(photo=url, caption=raw, parse_mode="Markdown")
+            save_state(message.from_user.id, state)
+            total_pages = (data.get("total", 100) + 9) // 10 
+            await message.answer(f"{what} – page {page}/{total_pages}")
 
-        await message.answer(f"{what.title()} – page {state['page']}/{data.get('total_pages','?')}", reply_markup=nav_kb(what))
+    except Exception as exc:
+        logger.error("❌ Error while sending page: %s", item_vals)
+        if not item_vals:
+            await message.answer("An error occurred while getting data. Please try again later.")
 
 def escape_md_v2(text: str) -> str:
     return re.sub(r'([_\*\[\]\(\)~`>#+\-=\|{}.!])', r"\\\1", text)
