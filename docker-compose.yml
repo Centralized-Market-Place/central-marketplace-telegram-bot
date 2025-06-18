@@ -6,4 +6,4 @@ services:
     container_name: central-marketplace-bot
     restart: always
     env_file: .env
-    command: python runner.py
+    command: python bot.py
