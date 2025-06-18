@@ -242,8 +242,12 @@ async def _send_page(message: types.Message, what: str, category: str, page: int
                     description = (item.get("description") or "").strip()
                     if len(description) > 800:
                         description = description[:800] + "..."
-
-                    raw = f"*{item.get('title','<no name>')}*\n\nPrice: ${item.get('price') or 'Not Described'}\n{description}"
+                    price = item.get("price")
+                    if price is None:
+                        price = "Not Described"
+                    else :
+                        price = f"${price} BIRR"
+                    raw = f"*{item.get('title','<no name>')}*\n\nPrice: {price}\n{description}"
                     if link:
                         raw += f"\n\n[🔗 View Product]({link})"
 
