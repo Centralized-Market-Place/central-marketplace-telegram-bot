@@ -3,7 +3,7 @@ import sqlite3
 import threading
 from typing import Optional, Dict, Any
 
-_DB_PATH = "user_state.sqlite3"
+_DB_PATH = "user_state_2.sqlite3"
 _LOCK = threading.Lock()
 
 def _get_connection():
