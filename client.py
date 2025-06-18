@@ -83,13 +83,13 @@ class ApiClient:
         if query:
             params["query"] = query
         
-        for attempt in range(3):
+        for attempt in range(5):
             try:
                 response = await self._client.get("/channels", params=params, timeout=httpx.Timeout(3, connect=3))
                 response.raise_for_status()
                 return response.json()
             except httpx.RequestError as e:
-                logger.warning(f"Attempt {attempt+1}/3 failed: {e}")
+                logger.warning(f"Attempt {attempt+1}/5 failed: {e}")
                 await asyncio.sleep(2 ** attempt)
 
 
@@ -115,7 +115,7 @@ class ApiClient:
                     params["min_price"] = price_range["min_price"]
                 if price_range.get("max_price") is not None:
                         params["max_price"] = price_range["max_price"]
-        for attempt in range(3):
+        for attempt in range(5):
             try:
                 response = await self._client.get("/products/", params=params, timeout=httpx.Timeout(3, connect=3))
                 response.raise_for_status()
