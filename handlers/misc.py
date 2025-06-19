@@ -266,7 +266,7 @@ async def _send_page(message: types.Message, what: str, category: str, page: int
                     link = f"https://t.me/{username}" if username else "N/A"
                     raw = f"*{item.get('title', '<no title>')}*\n{(item.get('description') or '')[:100]}...\n[🔗 Join Channel]({link})"
                     caption = escape_md_v2(raw)
-                    await message.answer_photo(photo=url, caption=raw, parse_mode="MarkdownV2")
+                    await message.answer_photo(photo=url, caption=caption, parse_mode="MarkdownV2")
             save_state(message.from_user.id, state)
             total_pages = (data.get("total", 100) + 9) // 10 
             await message.answer(f"{what} – page {page}/{total_pages}")
@@ -276,6 +276,5 @@ async def _send_page(message: types.Message, what: str, category: str, page: int
         logger.exception("Error while sending page: %s", repr(exc))
         if not item_vals:
             await message.answer("An error occurred while getting data. Please try again later.")
-
 def escape_md_v2(text: str) -> str:
-    return re.sub(r'([_\*\[\]\(\)~`>#+\-=\|{}.!])', r"\\\1", text)
+    return re.sub(r'([_*\[\]()~`>#+\-=|{}.!\\])', r'\\\1', text)
