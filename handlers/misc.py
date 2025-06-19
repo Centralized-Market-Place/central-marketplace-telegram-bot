@@ -61,6 +61,10 @@ async def cmd_show_categories(message: types.Message):
 
 @router.message(lambda m: m.text == "💰 Filter by Price")
 async def cmd_show_price_ranges(message: types.Message):
+    state = load_state(message.from_user.id)
+    state["searching"] = False
+    # state["query"] = None
+    save_state(message.from_user.id, state)
     kb = types.ReplyKeyboardMarkup(
         keyboard=[
             [types.KeyboardButton(text=price["label"])] for price in PRICE_RANGES
