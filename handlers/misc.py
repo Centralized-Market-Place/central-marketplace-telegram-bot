@@ -9,6 +9,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from client import ApiClient
 import logging
 import re
+# from aiogram.utils.markdown import quote
 logger = logging.getLogger(__name__)
 from aiogram.types import ReplyKeyboardRemove
 from state_store import save_state, load_state, clear_state
@@ -19,7 +20,7 @@ router = Router()
 
 
 def nav_kb(kind: str) -> ReplyKeyboardMarkup:
-    cats = ["technology", "mobile", "fashion"]
+    cats = ["technology", "accessories", "shoes", "clothes"]
     kb = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=cat.title())] for cat in cats
@@ -45,7 +46,7 @@ async def cmd_show_categories(message: types.Message):
         "min_price": None,
         "max_price": None
     })
-    cats = ["technology", "mobile", "fashion"]
+    cats = ["technology", "accessories", "shoes", "clothes"]
     kb = types.ReplyKeyboardMarkup(
         keyboard=
             [[types.KeyboardButton(text=cat.title())] for cat in cats]
@@ -105,7 +106,7 @@ async def _list_products_or_channels(message: types.Message, kind: str, page: in
 
     await _send_page(message, kind, category, page)
 
-    cats = ["technology", "mobile", "fashion"]
+    cats = ["technology", "accessories", "shoes", "clothes"]
     kb = types.ReplyKeyboardMarkup(
         keyboard=
             [[types.KeyboardButton(text=cat.title())] for cat in cats]
@@ -142,7 +143,7 @@ async def handle_help(message: types.Message):
 async def cmd_back_to_main(message: types.Message):
     await cmd_start(message)
 
-@router.message(lambda m: m.text and m.text.lower() in ["technology","mobile","fashion"])
+@router.message(lambda m: m.text and m.text.lower() in ["technology", "accessories", "shoes", "clothes"])
 async def cmd_category_selected(message: types.Message):
     category = message.text.lower()
     state = load_state(message.from_user.id)
@@ -250,15 +251,16 @@ async def _send_page(message: types.Message, what: str, category: str, page: int
                     raw = f"*{item.get('title','<no name>')}*\n\nPrice: {price}\n{description}"
                     if link:
                         raw += f"\n\n[🔗 View Product]({link})"
-
-                    await message.answer_photo(photo=url, caption=raw, parse_mode="Markdown")
+                    
+                    caption = escape_md_v2(raw)
+                    await message.answer_photo(photo=url, caption=caption, parse_mode="MarkdownV2")
                 else:
                     url = item.get("thumbnail_url") or "https://via.placeholder.com/300x200"
                     username = item.get("username")
                     link = f"https://t.me/{username}" if username else "N/A"
                     raw = f"*{item.get('title', '<no title>')}*\n{(item.get('description') or '')[:100]}...\n[🔗 Join Channel]({link})"
-                    # caption = escape_md_v2(raw)
-                    await message.answer_photo(photo=url, caption=raw, parse_mode="Markdown")
+                    caption = escape_md_v2(raw)
+                    await message.answer_photo(photo=url, caption=raw, parse_mode="MarkdownV2")
             save_state(message.from_user.id, state)
             total_pages = (data.get("total", 100) + 9) // 10 
             await message.answer(f"{what} – page {page}/{total_pages}")

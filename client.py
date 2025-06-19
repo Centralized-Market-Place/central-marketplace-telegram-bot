@@ -79,7 +79,7 @@ class ApiClient:
             "page_size": page_size,
         }
         if category:
-            params["category"] = category
+            params["categories"] = category
         if query:
             params["query"] = query
         
@@ -106,7 +106,7 @@ class ApiClient:
             "page_size": page_size,
         }
         if category:
-            params["category"] = category
+            params["categories"] = category
         if query:
             params["query"] = query
         if price_range:
