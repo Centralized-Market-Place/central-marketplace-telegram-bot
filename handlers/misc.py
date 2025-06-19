@@ -149,6 +149,8 @@ async def cmd_category_selected(message: types.Message):
     state = load_state(message.from_user.id)
     state["category"] = category
     state["page"]     = 1
+    state["searching"] = False
+    state["query"] = None
     save_state(message.from_user.id, state)
 
     await _list_products_or_channels(
@@ -173,7 +175,7 @@ async def cmd_search_input(message: types.Message):
     state = load_state(message.from_user.id)
     state["query"] = message.text.strip()
     state["page"] = 1
-    state["searching"] = False
+    # state["searching"] = False
     save_state(message.from_user.id, state)
     await _send_page(message, what=state["what"], category=state.get("category"), page=state["page"])
     
